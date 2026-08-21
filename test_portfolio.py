@@ -11,6 +11,7 @@ import pytest
 import data
 import portfolio as pf
 import riskstats as rstats
+import tailrisk as tr
 
 
 @pytest.fixture(scope="module")
@@ -223,3 +224,109 @@ def test_compare_reports_significance_columns(prices):
         assert col in out.columns, out.columns.tolist()
     assert out.loc["equal_weight", "p_vs_equal_weight"] > 0.9   # vs itself
     assert (out["DSR"] <= out["PSR"] + 1e-12).all()
+
+
+# ---------------------------------------------------------------- tail risk
+
+@pytest.fixture(scope="module")
+def garch_stream():
+    """Returns with genuine volatility clustering, so risk models differ."""
+    rng = np.random.default_rng(3)
+    n = 2200
+    r = np.zeros(n)
+    s2 = 1e-4
+    z = rng.standard_t(6, n) / np.sqrt(6 / 4)
+    for t in range(n):
+        r[t] = np.sqrt(s2) * z[t]
+        s2 = 2e-6 + (0.05 + (0.10 if r[t] < 0 else 0)) * r[t] ** 2 + 0.88 * s2
+    return pd.Series(r, index=pd.bdate_range("2014-01-01", periods=n))
+
+
+def test_es_forecast_is_out_of_sample(garch_stream):
+    """Truncating the input must not change any forecast that survives.
+
+    This is the tail-risk equivalent of the walk-forward look-ahead test: if a
+    forecast for day t changed when data after t was removed, it had been
+    using it.
+    """
+    full = tr.forecast(garch_stream, "GJR-GARCH + FHS", 0.025, 500)
+    cut = tr.forecast(garch_stream.iloc[:-150], "GJR-GARCH + FHS", 0.025, 500)
+    k = len(cut)
+    assert np.allclose(full.var[:k], cut.var[:k], atol=1e-12)
+    assert np.allclose(full.es[:k], cut.es[:k], atol=1e-12)
+
+
+def test_es_is_never_below_var(garch_stream):
+    for m in tr.MODELS:
+        f = tr.forecast(garch_stream, m, 0.025, 500)
+        assert (f.es >= f.var).all(), m
+        assert np.isfinite(f.es).all() and (f.var > 0).all(), m
+
+
+def test_short_sample_is_refused(garch_stream):
+    with pytest.raises(ValueError):
+        tr.forecast(garch_stream.iloc[:300], window=500)
+
+
+def test_es_target_respects_leverage_cap_and_monotonicity(garch_stream):
+    f = tr.forecast(garch_stream, "GJR-GARCH + FHS", 0.025, 500)
+    lo = tr.es_target(garch_stream, f, 1.0, max_leverage=2.0)
+    hi = tr.es_target(garch_stream, f, 2.0, max_leverage=2.0)
+    assert lo["leverage"].max() <= 2.0 + 1e-12
+    assert hi["leverage"].mean() > lo["leverage"].mean()
+    assert tr.realised_es(hi["scaled"]) > tr.realised_es(lo["scaled"])
+
+
+def test_a_failing_risk_model_overshoots_the_target_by_more(garch_stream):
+    """The point of the whole integration: a risk model that understates the
+    tail over-levers the book, so its realised risk misses the target by more
+    than a calibrated model's does."""
+    good = tr.forecast(garch_stream, "GJR-GARCH + FHS", 0.025, 500)
+    bad = tr.forecast(garch_stream, "Gaussian", 0.025, 500)
+    dg = tr.es_target(garch_stream, good, 1.5, max_leverage=5.0)
+    db = tr.es_target(garch_stream, bad, 1.5, max_leverage=5.0)
+    miss_good = abs(tr.realised_es(dg["scaled"]) / 1.5 - 1)
+    miss_bad = abs(tr.realised_es(db["scaled"]) / 1.5 - 1)
+    assert miss_bad > miss_good, (miss_bad, miss_good)
+
+
+def test_targeting_stabilises_rolling_risk(garch_stream):
+    """ES targeting must reduce the DISPERSION of realised risk over time --
+    that is what a static leverage cannot do."""
+    f = tr.forecast(garch_stream, "GJR-GARCH + FHS", 0.025, 500)
+    d = tr.es_target(garch_stream, f, 1.5, max_leverage=5.0)
+    cv = lambda x: x.std() / x.mean()
+    raw = pd.Series(d["raw"].to_numpy()).rolling(60).std().dropna()
+    scl = pd.Series(d["scaled"].to_numpy()).rolling(60).std().dropna()
+    assert cv(scl) < cv(raw)
+
+
+def test_every_ui_option_changes_the_result(garch_stream):
+    """The app's controls must actually control something.
+
+    A dashboard whose sliders do not move the numbers is a screenshot. Each
+    block below is one sidebar control on the Tail Risk page.
+    """
+    s = garch_stream
+
+    # confidence level: a deeper tail means a bigger ES and less leverage
+    es = {a: tr.forecast(s, "GJR-GARCH + FHS", a, 500).es.mean()
+          for a in (0.05, 0.025, 0.01)}
+    assert es[0.01] > es[0.025] > es[0.05]
+
+    # estimation window
+    a250 = tr.forecast(s, "GJR-GARCH + FHS", 0.025, 250)
+    a500 = tr.forecast(s, "GJR-GARCH + FHS", 0.025, 500)
+    assert not np.allclose(a250.es[-100:], a500.es[-100:])
+
+    # risk model
+    per_model = {m: tr.forecast(s, m, 0.025, 500).es.mean() for m in tr.MODELS}
+    assert len(set(np.round(list(per_model.values()), 8))) == len(tr.MODELS)
+
+    # ES target and leverage cap
+    f = tr.forecast(s, "GJR-GARCH + FHS", 0.025, 500)
+    levs = [tr.es_target(s, f, t, max_leverage=3.0)["leverage"].mean()
+            for t in (1.0, 1.6, 2.5)]
+    assert levs[0] < levs[1] < levs[2]
+    capped = tr.es_target(s, f, 2.5, max_leverage=1.0)["leverage"]
+    assert capped.max() <= 1.0 + 1e-12

@@ -24,7 +24,7 @@ def sidebar():
     raw = st.sidebar.text_area("Tickers (Yahoo symbols)", DEFAULT_UNIVERSE, height=110)
     bench = st.sidebar.text_input("Benchmark", DEFAULT_BENCH)
     c1, c2 = st.sidebar.columns(2)
-    start = c1.date_input("Start", value=__import__("datetime").date(2019, 1, 1))
+    start = c1.date_input("Start", value=__import__("datetime").date(2010, 1, 1))
     end = c2.date_input("End", value=__import__("datetime").date.today())
     rf = st.sidebar.slider("Risk-free rate (annual)", 0.0, 0.12, 0.065, 0.005)
     offline = st.sidebar.checkbox("Offline (cache only)", value=False)
