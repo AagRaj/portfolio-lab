@@ -10,6 +10,7 @@ import pytest
 
 import data
 import portfolio as pf
+import riskstats as rstats
 
 
 @pytest.fixture(scope="module")
@@ -30,7 +31,8 @@ def prices():
 
 # ------------------------------------------------------------------ weights
 
-@pytest.mark.parametrize("method", ["equal_weight", "max_sharpe", "min_volatility", "hrp"])
+@pytest.mark.parametrize("method", ["equal_weight", "max_sharpe", "min_volatility",
+                                    "hrp", "risk_parity"])
 def test_weights_are_a_long_only_portfolio(prices, method):
     w = pf.optimize(prices[0], method=method)
     assert np.isclose(w.sum(), 1.0, atol=1e-6), f"{method} weights sum to {w.sum()}"
@@ -149,3 +151,75 @@ def test_short_history_tickers_are_dropped_but_reported(tmp_path, monkeypatch):
     assert list(px.columns) == ["GOOD"]
     assert set(rep["ticker"]) == {"GOOD", "SHORT"}
     assert not rep.set_index("ticker").loc["SHORT", "kept"]
+
+
+# ------------------------------------------------- risk parity & significance
+
+def test_risk_parity_equalises_risk_contributions(prices):
+    """The defining property: every asset contributes the same share of vol.
+
+    Equal WEIGHT does not do this, which is the whole reason ERC exists -- so
+    the test also asserts the two portfolios are actually different.
+    """
+    px = prices[0]
+    _, S = pf._inputs(px)
+    w = pf.optimize(px, "risk_parity").to_numpy()
+    rc = rstats.risk_contributions(w, S.to_numpy())
+
+    assert np.isclose(w.sum(), 1.0) and (w > 0).all()
+    assert rc.std() / rc.mean() < 1e-5, f"risk contributions not equal: {rc}"
+    assert np.isclose(rc.sum(), np.sqrt(w @ S.to_numpy() @ w))   # Euler identity
+
+    eq = np.full(len(w), 1 / len(w))
+    rc_eq = rstats.risk_contributions(eq, S.to_numpy())
+    assert rc_eq.std() / rc_eq.mean() > rc.std() / rc.mean()
+    # HIGH beta / high vol asset must get less capital than the low-vol one
+    assert w[list(px.columns).index("HIGH")] < w[list(px.columns).index("FLAT")]
+
+
+def test_uncorrelated_risk_parity_is_inverse_volatility():
+    """With a diagonal covariance ERC has a closed form: w_i proportional to
+    1/sigma_i. Anything else means the solver is wrong."""
+    S = np.diag([0.04, 0.01, 0.0025, 0.16])
+    w = rstats.erc_weights(S)
+    inv = 1 / np.sqrt(np.diag(S))
+    assert np.allclose(w, inv / inv.sum(), atol=1e-6)
+
+
+def test_deflation_never_raises_the_sharpe_verdict(prices):
+    """DSR <= PSR always: pricing in the number of trials can only make a
+    result less significant, never more."""
+    rng = np.random.default_rng(1)
+    trials = [rng.normal(0, 0.03) for _ in range(6)]
+    r = rng.standard_normal(1200) * 0.01 + 0.0005
+    d = rstats.deflated_sharpe(r, trials)
+    assert d["SR0"] > 0
+    assert d["DSR"] <= d["PSR"] + 1e-12
+
+
+def test_best_of_many_random_strategies_fails_deflation():
+    """The property the whole thing exists for: pick the best of 40 coin
+    flips and it looks significant on its own, but must not survive DSR."""
+    rng = np.random.default_rng(7)
+    cands = [rng.standard_normal(1500) * 0.01 for _ in range(40)]
+    srs = [rstats.per_period_sharpe(c) for c in cands]
+    best = cands[int(np.argmax(srs))]
+    d = rstats.deflated_sharpe(best, srs)
+    assert d["PSR"] > 0.90 and d["DSR"] < 0.95
+
+
+def test_sharpe_diff_test_identifies_no_difference(prices):
+    a = np.asarray(prices[0]["MID"].pct_change().dropna())
+    t = rstats.sharpe_diff_test(a, a.copy(), n_boot=400)
+    assert t["p_boot"] > 0.9 and abs(t["diff"]) < 1e-12
+
+
+def test_compare_reports_significance_columns(prices):
+    """compare() must carry the significance layer, not just the metrics --
+    a table of Sharpes with no p-values is what this repo is arguing against."""
+    out = pf.compare(prices[0], methods=["equal_weight", "risk_parity"],
+                     fit_days=250, hold_days=63, n_boot=200)
+    for col in ("PSR", "DSR", "p_vs_equal_weight"):
+        assert col in out.columns, out.columns.tolist()
+    assert out.loc["equal_weight", "p_vs_equal_weight"] > 0.9   # vs itself
+    assert (out["DSR"] <= out["PSR"] + 1e-12).all()

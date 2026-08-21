@@ -16,8 +16,11 @@ from pypfopt.black_litterman import BlackLittermanModel
 from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
 from pypfopt.hierarchical_portfolio import HRPOpt
 
+import riskstats
+
 TRADING_DAYS = 252
-METHODS = ["equal_weight", "max_sharpe", "min_volatility", "black_litterman", "hrp"]
+METHODS = ["equal_weight", "max_sharpe", "min_volatility", "black_litterman",
+           "hrp", "risk_parity"]
 
 
 # --------------------------------------------------------------------------- CAPM
@@ -83,6 +86,13 @@ def optimize(
     if method == "hrp":
         w = HRPOpt(prices.pct_change().dropna()).optimize()
         return pd.Series(w).reindex(assets).fillna(0.0)
+
+    if method == "risk_parity":
+        # Equal RISK contribution, not equal capital and not HRP's clustering.
+        # Uses the same Ledoit-Wolf shrunk covariance as everything else, and
+        # never touches the expected-return vector -- which is the whole point,
+        # since that vector is where mean-variance goes wrong.
+        return pd.Series(riskstats.erc_weights(S.to_numpy()), index=assets)
 
     if method == "black_litterman":
         prior = bl_prior(S, market_caps, market_prices, assets, rf)
@@ -195,13 +205,39 @@ def walk_forward(
     return pd.concat(out) if out else pd.Series(dtype=float)
 
 
-def compare(prices: pd.DataFrame, methods=None, rf=0.05, **kw) -> pd.DataFrame:
+def compare(prices: pd.DataFrame, methods=None, rf=0.05, benchmark="equal_weight",
+            n_boot=2000, **kw) -> pd.DataFrame:
+    """Walk-forward comparison, plus the significance layer.
+
+    A table of five Sharpes with no standard errors is not a result. Two
+    columns fix that:
+
+    DSR  -- Deflated Sharpe Ratio. Corrects the Sharpe for skew, kurtosis,
+            sample length AND the number of strategies tried. Below 0.95 means
+            the strategy is indistinguishable from the luckiest of N coin
+            flips, however good the raw Sharpe looks.
+    p_vs -- block-bootstrap p-value for "this method's Sharpe differs from the
+            benchmark's". Defaults to equal weighting, because beating equal
+            weighting is the claim that actually has to be defended.
+    """
     methods = methods or METHODS
-    rows = {}
+    series, rows = {}, {}
     for m in methods:
         try:
-            rows[m] = metrics(walk_forward(prices, m, rf=rf, **kw), rf=rf)
+            s = walk_forward(prices, m, rf=rf, **kw)
+            series[m], rows[m] = s, metrics(s, rf=rf)
         except Exception as exc:
             rows[m] = {"cagr": np.nan, "volatility": np.nan, "sharpe": np.nan,
                        "max_drawdown": np.nan, "cvar_95": np.nan, "error": str(exc)[:80]}
+
+    if series:
+        trials = [riskstats.per_period_sharpe(s.to_numpy()) for s in series.values()]
+        bench = series.get(benchmark)
+        for m, s in series.items():
+            d = riskstats.deflated_sharpe(s.to_numpy(), trials)
+            rows[m]["PSR"] = d["PSR"]
+            rows[m]["DSR"] = d["DSR"]
+            if bench is not None:
+                rows[m]["p_vs_" + benchmark] = riskstats.sharpe_diff_test(
+                    s.to_numpy(), bench.to_numpy(), n_boot=n_boot)["p_boot"]
     return pd.DataFrame(rows).T
