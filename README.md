@@ -34,19 +34,9 @@ percentage points of the same CAGR at visibly different volatility. But **no met
 significantly beats equal weighting** (every p > 0.14). The one significant result
 in the table is negative: Black-Litterman is significantly *worse*, at p = 0.006.
 
-### An earlier version of this README was wrong, and that is worth stating
-
-On a 2019-2026 sample this table looked completely different: max Sharpe came last
-at 0.240 with a DSR of 0.873, and the headline was "optimising for Sharpe produces
-the worst out-of-sample Sharpe." **That conclusion did not survive extending the
-sample to 2010.** Over 16 years max Sharpe sits mid-table at 0.721 and clears
-deflation comfortably.
-
-The 7.5-year result was a small-sample artifact. It was reported with the correct
-caveat at the time (the Sharpe gap was not significant, p = 0.19) — which is exactly
-why the caveat was there. A backtest conclusion that flips when you double the
-sample was never a finding, and the significance column is what tells you that
-before someone else does.
+These rankings are sample-dependent. On a 2019-2026 window max Sharpe came last at
+0.240; over 16 years it sits mid-table at 0.721. Neither gap is significant, which
+is what the p-value column is for.
 
 ## 2. Tail risk: can this portfolio's risk be forecast?
 
