@@ -123,7 +123,7 @@ def get_prices(
 
 
 def get_market_caps(tickers: list[str], allow_network: bool = True) -> dict[str, float] | None:
-    """Market caps for the Black-Litterman prior. None if unavailable — callers
+    """Market caps for the Black-Litterman prior. None if unavailable, in which case callers
     must fall back to a flat prior and say so in the UI.
 
     Cached to disk because each lookup is a separate `.info` request: fifteen

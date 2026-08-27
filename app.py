@@ -1,4 +1,4 @@
-"""Portfolio Lab — universe and data quality. Other pages are in pages/."""
+"""Portfolio Lab: universe and data quality. Other pages are in pages/."""
 
 import matplotlib.pyplot as plt
 import streamlit as st
@@ -49,6 +49,6 @@ with right:
     st.caption(
         "Mean pairwise correlation "
         f"{r.corr().values[~__import__('numpy').eye(len(r.columns), dtype=bool)].mean():.2f}. "
-        "Diversification benefit shrinks as this rises — the number to watch before "
+        "Diversification benefit shrinks as this rises. Worth checking before "
         "trusting any efficient-frontier result below."
     )

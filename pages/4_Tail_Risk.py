@@ -1,4 +1,4 @@
-"""Can this portfolio's tail risk be forecast — and what does the answer cost?
+"""Can this portfolio's tail risk be forecast, and what does the answer cost?
 
 Every other page decides how to allocate capital. This one takes the resulting
 return stream and asks the question a risk desk asks next: is the tail
@@ -17,7 +17,7 @@ import portfolio as pf
 import tailrisk as tr
 
 st.set_page_config(page_title="Tail Risk", layout="wide")
-st.title("Tail risk — forecasting it, backtesting it, sizing on it")
+st.title("Tail risk: forecasting it, backtesting it, sizing on it")
 
 prices, bench, _, rf = common.sidebar()
 
@@ -75,7 +75,7 @@ st.caption(
     "Kupiec tests the breach COUNT, Christoffersen tests whether breaches "
     "cluster, DQ tests whether they are predictable from lagged breaches or "
     "from the level of VaR itself, and Acerbi-Szekely tests Expected Shortfall "
-    "directly — the only one of the four that looks past the threshold at how "
+    "directly, the only one of the four that looks past the threshold at how "
     "bad the losses beyond it are."
 )
 with st.spinner("Backtesting five risk models…"):
@@ -115,7 +115,7 @@ for m in tr.MODELS:
     curves[m] = d["scaled"]
     unscaled = s.loc["unscaled"]
 
-rows["— unscaled —"] = {"avg leverage": 1.0, **unscaled.to_dict()}
+rows["(unscaled)"] = {"avg leverage": 1.0, **unscaled.to_dict()}
 tbl = pd.DataFrame(rows).T
 es_col = [c for c in tbl.columns if c.startswith("realised ES")][0]
 
@@ -126,13 +126,13 @@ st.dataframe(
     use_container_width=True,
 )
 
-best = tbl.drop(index="— unscaled —")["vs target"].abs().idxmin()
-worst = tbl.drop(index="— unscaled —")["vs target"].abs().idxmax()
+best = tbl.drop(index="(unscaled)")["vs target"].abs().idxmin()
+worst = tbl.drop(index="(unscaled)")["vs target"].abs().idxmax()
 st.markdown(
     f"**`{best}` lands closest to the target "
     f"({tbl.loc[best, 'vs target']:+.1%}); `{worst}` is furthest "
     f"({tbl.loc[worst, 'vs target']:+.1%}).** The ordering here tracks the "
-    "backtest table above — models that fail the ES test under-forecast the "
+    "backtest table above. Models that fail the ES test under-forecast the "
     "tail, so sizing on them over-levers the book. A p-value became basis "
     "points."
 )
@@ -147,7 +147,7 @@ dates = stream.index[idx]
 breach = r < -var
 
 with c1:
-    st.markdown(f"**{model} — {conf:.1%} VaR vs realised returns**")
+    st.markdown(f"**{model}, {conf:.1%} VaR vs realised returns**")
     fig, ax = plt.subplots(figsize=(6, 3.8))
     ax.plot(dates, r * 100, lw=0.4, color="0.75", label="daily return")
     ax.plot(dates, -var * 100, lw=1.0, color="#1f77b4", label="VaR forecast")

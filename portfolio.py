@@ -125,7 +125,7 @@ def optimize(
 def bl_prior(S, market_caps, market_prices, assets, rf) -> pd.Series:
     """Market-implied prior returns, or an equal prior if caps are unavailable.
 
-    The caller is expected to surface which one was used — a Black-Litterman
+    The caller is expected to surface which one was used. A Black-Litterman
     result built on an equal prior is not a market-equilibrium result.
     """
     if market_caps and market_prices is not None and len(market_caps) == len(assets):
@@ -174,6 +174,36 @@ def metrics(returns: pd.Series, rf: float = 0.05) -> dict:
         "max_drawdown": float(dd),
         "cvar_95": float(tail.mean()) if len(tail) else np.nan,
     }
+
+
+def backtest_verdict(sharpe: pd.Series) -> str:
+    """One sentence describing which method actually won, and why it matters.
+
+    Lives here rather than in the page so it can be tested. The version in the
+    page compared only max_sharpe against equal_weight, so once min_volatility
+    and risk_parity joined METHODS it would announce one winner and then credit
+    a different portfolio in the next clause.
+    """
+    if sharpe.dropna().empty:
+        return "No method produced a usable out-of-sample Sharpe on this sample."
+    best = sharpe.idxmax()
+    ms = sharpe.get("max_sharpe", float("nan"))
+    ew = sharpe.get("equal_weight", float("nan"))
+    best_optimiser = sharpe.drop("equal_weight", errors="ignore").max()
+    msg = (f"**Best out-of-sample Sharpe: `{best}` at {sharpe.max():.2f}.** "
+           f"In-sample max-Sharpe scored {ms:.2f}, naive equal weighting {ew:.2f}. ")
+    if ew >= best_optimiser:
+        return msg + ("Equal weighting beat every optimiser, which is the usual "
+                      "result and the reason estimation error rather than "
+                      "optimisation is the binding constraint in mean-variance "
+                      "investing.")
+    if ew >= ms:
+        return msg + (f"Equal weighting beat max-Sharpe, so the expected-return "
+                      f"estimates are not paying their way, but `{best}` beat both. "
+                      f"The methods that win here are the ones that never estimate "
+                      f"expected returns at all.")
+    return msg + ("Optimisation beat equal weighting on this sample. Worth checking "
+                  "it survives a different fit window before believing it.")
 
 
 def walk_forward(

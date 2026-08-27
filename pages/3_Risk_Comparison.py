@@ -9,7 +9,7 @@ import data
 import portfolio as pf
 
 st.set_page_config(page_title="Risk Comparison", layout="wide")
-st.title("Risk comparison — in sample vs out of sample")
+st.title("Risk comparison: in sample vs out of sample")
 
 prices, bench, _, rf = common.sidebar()
 
@@ -50,7 +50,7 @@ with right:
     st.subheader("Walk-forward, out of sample")
     st.caption(
         f"Fit on a trailing {fit_days}-day window, hold {hold_days} days, roll forward. "
-        "The fit window never overlaps the hold window — `walk_forward` asserts it and "
+        "The fit window never overlaps the hold window. `walk_forward` asserts it and "
         "`test_portfolio.py` checks the assert is reachable."
     )
     caps = data.get_market_caps(list(prices.columns),
@@ -72,18 +72,7 @@ with right:
     )
 
     if "sharpe" in table and table["sharpe"].notna().any():
-        best = table["sharpe"].idxmax()
-        ms = table["sharpe"].get("max_sharpe", float("nan"))
-        ew = table["sharpe"].get("equal_weight", float("nan"))
-        st.markdown(
-            f"**Best out-of-sample Sharpe: `{best}`.** In-sample max-Sharpe scored "
-            f"{ms:.2f} here versus {ew:.2f} for naive equal weighting."
-            + ("  Equal weighting won, which is the usual result and the reason "
-               "estimation error, not optimisation, is the binding constraint in "
-               "mean-variance investing." if ew >= ms else
-               "  Optimisation beat equal weighting on this sample — worth checking "
-               "whether it survives a different fit window before believing it.")
-        )
+        st.markdown(pf.backtest_verdict(table["sharpe"]))
 
 st.subheader("Equity curves")
 fig, ax = plt.subplots(figsize=(11, 3.6))

@@ -8,7 +8,7 @@ import common
 import portfolio as pf
 
 st.set_page_config(page_title="CAPM", layout="wide")
-st.title("CAPM — betas and the security market line")
+st.title("CAPM: betas and the security market line")
 
 prices, bench, _, rf = common.sidebar()
 tbl = pf.capm(prices, bench, rf)
@@ -52,12 +52,12 @@ with right:
     above = tbl[tbl["sml_gap"] > 0].index.tolist()
     below = tbl[tbl["sml_gap"] <= 0].index.tolist()
     st.markdown(
-        f"- **Above the line** ({len(above)}): {', '.join(a.replace('.NS','') for a in above) or '—'}\n"
-        f"- **Below the line** ({len(below)}): {', '.join(b.replace('.NS','') for b in below) or '—'}\n\n"
+        f"- **Above the line** ({len(above)}): {', '.join(a.replace('.NS','') for a in above) or 'none'}\n"
+        f"- **Below the line** ({len(below)}): {', '.join(b.replace('.NS','') for b in below) or 'none'}\n\n"
         "Sitting above the SML is **not** a buy signal. This is an in-sample fit on "
         "the same history used to compute the average return, so a positive gap is "
         "partly the estimation error of that same sample. Single-factor CAPM also "
-        f"leaves most variance unexplained here — median $R^2$ is "
+        f"leaves most variance unexplained here. Median $R^2$ is "
         f"**{tbl['r_squared'].median():.2f}**, so {1 - tbl['r_squared'].median():.0%} "
         "of each asset's movement is idiosyncratic and invisible to this model.\n\n"
         "The defensible use of this page is the **beta** column as a covariance input, "

@@ -56,7 +56,7 @@ with tab_bl:
         "Black-Litterman starts from the returns the market's own capitalisation "
         "weights imply, then tilts toward your views in proportion to how confident "
         "you say you are. It exists because plain Markowitz on historical means "
-        "produces extreme, unstable weights — the limitation this page demonstrates."
+        "produces extreme, unstable weights, which is the limitation this page demonstrates."
     )
 
     caps = data.get_market_caps(assets, allow_network=not st.session_state.get("offline"))
@@ -66,7 +66,7 @@ with tab_bl:
         st.warning(
             "Market caps unavailable from the data provider, so the prior is flat "
             "(zeros). The result below is still Black-Litterman machinery but it is "
-            "**not** a market-equilibrium prior — do not present it as one."
+            "**not** a market-equilibrium prior. Do not present it as one."
         )
 
     picks = st.multiselect("Assets you have a view on", assets, max_selections=4)

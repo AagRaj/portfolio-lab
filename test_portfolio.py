@@ -1,6 +1,6 @@
 """Correctness checks. Run: python -m pytest -q
 
-Synthetic prices only — the suite must pass with the network unplugged.
+Synthetic prices only, so the suite must pass with the network unplugged.
 The look-ahead test is the one that matters; everything else is a guardrail.
 """
 
@@ -330,3 +330,36 @@ def test_every_ui_option_changes_the_result(garch_stream):
     assert levs[0] < levs[1] < levs[2]
     capped = tr.es_target(s, f, 2.5, max_leverage=1.0)["leverage"]
     assert capped.max() <= 1.0 + 1e-12
+
+
+# ------------------------------------------------------------------- verdict
+
+def test_verdict_names_the_method_that_actually_won():
+    """The bug this guards: the page compared only max_sharpe against
+    equal_weight, so after min_volatility and risk_parity joined METHODS it
+    announced 'Best Sharpe: min_volatility' and then said 'Equal weighting won'
+    in the same breath."""
+    s = pd.Series({"equal_weight": 0.86, "max_sharpe": 0.72,
+                   "min_volatility": 0.94, "risk_parity": 0.90})
+    out = pf.backtest_verdict(s)
+    assert "min_volatility" in out
+    assert "Equal weighting beat every optimiser" not in out, \
+        "claimed equal weight won while min_volatility scored higher"
+    assert "beat max-Sharpe" in out
+
+
+def test_verdict_credits_equal_weight_only_when_it_beats_everything():
+    s = pd.Series({"equal_weight": 0.90, "max_sharpe": 0.40, "hrp": 0.55})
+    out = pf.backtest_verdict(s)
+    assert "Equal weighting beat every optimiser" in out
+
+
+def test_verdict_when_optimisation_wins_outright():
+    s = pd.Series({"equal_weight": 0.30, "max_sharpe": 0.80, "hrp": 0.50})
+    out = pf.backtest_verdict(s)
+    assert "Optimisation beat equal weighting" in out
+
+
+def test_verdict_survives_an_all_nan_table():
+    assert "No method" in pf.backtest_verdict(
+        pd.Series({"equal_weight": np.nan, "max_sharpe": np.nan}))
